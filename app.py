@@ -35,9 +35,14 @@ def procesar_xml(carpeta):
                 conceptos = root.find('cfdi:Conceptos', ns)
                 iva = 0.0
                 isr = 0.0
+                descripciones = []  # Nueva lista para guardar las descripciones
 
                 if conceptos is not None:
                     for concepto in conceptos.findall('cfdi:Concepto', ns):
+                        descripcion = concepto.attrib.get('Descripcion', '')
+                        if descripcion:
+                            descripciones.append(descripcion.strip())
+
                         impuestos = concepto.find('cfdi:Impuestos', ns)
                         if impuestos is not None:
                             traslados = impuestos.find('cfdi:Traslados', ns)
@@ -63,7 +68,7 @@ def procesar_xml(carpeta):
                     'Reviewed By': '',
                     'Approved By': '',
                     'Corp Approval': '',
-                    'Description': '',
+                    'Description': ' | '.join(descripciones),  # Aquí agregamos las descripciones
                     'P.O.': '',
                     'Payment Terms': '',
                     'Invoice date': fecha_formateada,
@@ -166,18 +171,17 @@ def main():
 
         df = pd.concat([df, pd.DataFrame([fila_suma])], ignore_index=True)
 
-        # Estilos para la tabla: 
-        # Encabezados con fondo gris y negrita, suma con fondo amarillo en Total
+        # Estilos para la tabla: encabezados grises, suma en amarillo
         def highlight_totals(row):
-            if row.name == len(df) - 1:  # última fila (suma)
+            if row.name == len(df) - 1:
                 return ['background-color: yellow; font-weight: bold;' if col == 'Total' else '' for col in df.columns]
             return ['' for _ in df.columns]
 
-        # Streamlit muestra el DataFrame con estilos
+        # Mostrar la tabla estilizada
         st.dataframe(df.style.set_table_styles(
             [{'selector': 'thead th',
               'props': [('background-color', '#d3d3d3'), ('color', 'black'), ('font-weight', 'bold'), ('text-align', 'center')]}]
-            ).apply(highlight_totals, axis=1), use_container_width=True)
+        ).apply(highlight_totals, axis=1), use_container_width=True)
 
 if __name__ == "__main__":
     main()
