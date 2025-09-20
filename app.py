@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 from datetime import datetime
 import streamlit as st
+from io import BytesIO
 
 # Namespace SAT
 ns = {
@@ -68,7 +69,7 @@ def procesar_xml(carpeta):
                     'Reviewed By': '',
                     'Approved By': '',
                     'Corp Approval': '',
-                    'Description': ' | '.join(descripciones),  # Aquí agregamos las descripciones
+                    'Description': ' | '.join(descripciones),
                     'P.O.': '',
                     'Payment Terms': '',
                     'Invoice date': fecha_formateada,
@@ -82,106 +83,144 @@ def procesar_xml(carpeta):
                 tabla.append(fila)
 
             except Exception as e:
-                print(f"❌ Error en {archivo}: {e}")
+                st.error(f"❌ Error en {archivo}: {e}")
 
     return tabla
 
+
+# --- Nueva función para depurar archivos Excel ---
+def depurar_excel(df_bruto):
+    # Eliminar las filas que contengan "Dollars For Week" o "Week Starting"
+    df_depurado = df_bruto[
+        ~df_bruto.iloc[:, 0].str.contains("Dollars For Week|Week Starting", na=False, case=False)
+    ].copy()
+
+    # Usar la primera fila limpia como nuevos encabezados
+    # `reset_index` para empezar de cero, `iloc[0]` para tomar la primera fila, `tolist()` para convertir a lista
+    nuevos_encabezados = df_depurado.iloc[0].tolist()
+    # Asignar los nuevos encabezados
+    df_depurado.columns = nuevos_encabezados
+
+    # Eliminar la fila de encabezados antigua, que ahora es la primera fila de datos
+    df_depurado = df_depurado.iloc[1:].reset_index(drop=True)
+
+    # Eliminar las columnas que no existen en el archivo modificado
+    columnas_a_eliminar = [
+        "Avg Days to Pay", "Pay Date", "Amount To Pay"
+    ]
+    # Eliminar columnas con errores de codificación
+    df_depurado = df_depurado.drop(columns=columnas_a_eliminar, errors='ignore')
+
+    return df_depurado
+
+
+# --- Lógica principal de la aplicación con pestañas ---
 def main():
-    # Título azul marino
     st.markdown(
         """
-        <h1 style='color: navy;'>Cash Request</h1>
+        <h1 style='color: navy;'>App de Gestión de Datos</h1>
         """,
         unsafe_allow_html=True
     )
 
-    archivos = st.file_uploader("Sube tus archivos XML", type=["xml"], accept_multiple_files=True)
+    tab1, tab2 = st.tabs(["Cash Request", "Depurar Archivo Excel"])
 
-    if archivos:
-        carpeta_temp = "xmls_temp"
-        os.makedirs(carpeta_temp, exist_ok=True)
+    with tab1:
+        st.header("Generar Solicitud de Efectivo")
+        archivos = st.file_uploader("Sube tus archivos XML", type=["xml"], accept_multiple_files=True)
 
-        # Limpiar carpeta antes de guardar
-        for f in os.listdir(carpeta_temp):
-            os.remove(os.path.join(carpeta_temp, f))
+        if archivos:
+            carpeta_temp = "xmls_temp"
+            os.makedirs(carpeta_temp, exist_ok=True)
 
-        for archivo in archivos:
-            with open(os.path.join(carpeta_temp, archivo.name), "wb") as f:
-                f.write(archivo.getbuffer())
+            for f in os.listdir(carpeta_temp):
+                os.remove(os.path.join(carpeta_temp, f))
 
-        tabla = procesar_xml(carpeta_temp)
-        df = pd.DataFrame(tabla)
+            for archivo in archivos:
+                with open(os.path.join(carpeta_temp, archivo.name), "wb") as f:
+                    f.write(archivo.getbuffer())
 
-        # Agregar encabezado extra como fila al inicio
-        encabezado_extra = {
-            'Item No.': '',
-            'Vendor Name': 'Wattera Cash Request',
-            'Invoice No.': ' / /',
-            'Subtotal': '',
-            'IVA': '',
-            'ISR/IVA RETENIDO': '',
-            'Total': '',
-            'Reviewed By': '',
-            'Approved By': '',
-            'Corp Approval': '',
-            'Description': '',
-            'P.O.': '',
-            'Payment Terms': '',
-            'Invoice date': '',
-            'Due date': '',
-            'PO Date': '',
-            'Receip date': '',
-            'Delivery time': '',
-            'Currency': ''
-        }
+            tabla = procesar_xml(carpeta_temp)
+            df = pd.DataFrame(tabla)
 
-        df = pd.concat([pd.DataFrame([encabezado_extra]), df], ignore_index=True)
+            encabezado_extra = {
+                'Item No.': '', 'Vendor Name': 'Wattera Cash Request', 'Invoice No.': ' / /',
+                'Subtotal': '', 'IVA': '', 'ISR/IVA RETENIDO': '', 'Total': '',
+                'Reviewed By': '', 'Approved By': '', 'Corp Approval': '',
+                'Description': '', 'P.O.': '', 'Payment Terms': '',
+                'Invoice date': '', 'Due date': '', 'PO Date': '',
+                'Receip date': '', 'Delivery time': '', 'Currency': ''
+            }
+            df = pd.concat([pd.DataFrame([encabezado_extra]), df], ignore_index=True)
 
-        # Función para limpiar valores de dinero y convertir a float
-        def limpiar_valor(valor):
+            def limpiar_valor(valor):
+                try:
+                    return float(str(valor).replace("$", "").replace(",", ""))
+                except:
+                    return 0
+
+            suma_total = sum(limpiar_valor(t) for t in df['Total'])
+
+            fila_suma = {
+                'Item No.': '', 'Vendor Name': '', 'Invoice No.': '',
+                'Subtotal': '', 'IVA': '', 'ISR/IVA RETENIDO': '',
+                'Total': f"${suma_total:,.2f}", 'Reviewed By': '',
+                'Approved By': '', 'Corp Approval': '', 'Description': '',
+                'P.O.': '', 'Payment Terms': '', 'Invoice date': '',
+                'Due date': '', 'PO Date': '', 'Receip date': '',
+                'Delivery time': '', 'Currency': ''
+            }
+            df = pd.concat([df, pd.DataFrame([fila_suma])], ignore_index=True)
+
+            def highlight_totals(row):
+                if row.name == len(df) - 1:
+                    return ['background-color: yellow; font-weight: bold;' if col == 'Total' else '' for col in df.columns]
+                return ['' for _ in df.columns]
+
+            st.dataframe(df.style.set_table_styles(
+                [{'selector': 'thead th',
+                  'props': [('background-color', '#d3d3d3'), ('color', 'black'), ('font-weight', 'bold'), ('text-align', 'center')]}]
+            ).apply(highlight_totals, axis=1), use_container_width=True)
+
+    with tab2:
+        st.header("Depurar Archivo Excel")
+        st.write("Sube el archivo Excel original para depurarlo.")
+        
+        uploaded_file = st.file_uploader("Arrastra aquí el archivo 'NO modificado'", type=["xlsx", "xls", "csv"])
+
+        if uploaded_file:
             try:
-                return float(str(valor).replace("$", "").replace(",", ""))
-            except:
-                return 0
+                if uploaded_file.name.endswith('.csv'):
+                    df_bruto = pd.read_csv(uploaded_file)
+                else:
+                    df_bruto = pd.read_excel(uploaded_file)
 
-        suma_total = sum(limpiar_valor(t) for t in df['Total'])
+                st.success("✅ Archivo cargado correctamente.")
 
-        # Crear fila de suma total para agregar al final
-        fila_suma = {
-            'Item No.': '',
-            'Vendor Name': '',
-            'Invoice No.': '',
-            'Subtotal': '',
-            'IVA': '',
-            'ISR/IVA RETENIDO': '',
-            'Total': f"${suma_total:,.2f}",
-            'Reviewed By': '',
-            'Approved By': '',
-            'Corp Approval': '',
-            'Description': '',
-            'P.O.': '',
-            'Payment Terms': '',
-            'Invoice date': '',
-            'Due date': '',
-            'PO Date': '',
-            'Receip date': '',
-            'Delivery time': '',
-            'Currency': ''
-        }
+                st.subheader("Vista previa del archivo sin depurar")
+                st.dataframe(df_bruto.head())
+                
+                if st.button("Depurar y Descargar"):
+                    df_depurado = depurar_excel(df_bruto)
+                    
+                    st.subheader("Vista previa del archivo depurado")
+                    st.dataframe(df_depurado.head())
 
-        df = pd.concat([df, pd.DataFrame([fila_suma])], ignore_index=True)
-
-        # Estilos para la tabla: encabezados grises, suma en amarillo
-        def highlight_totals(row):
-            if row.name == len(df) - 1:
-                return ['background-color: yellow; font-weight: bold;' if col == 'Total' else '' for col in df.columns]
-            return ['' for _ in df.columns]
-
-        # Mostrar la tabla estilizada
-        st.dataframe(df.style.set_table_styles(
-            [{'selector': 'thead th',
-              'props': [('background-color', '#d3d3d3'), ('color', 'black'), ('font-weight', 'bold'), ('text-align', 'center')]}]
-        ).apply(highlight_totals, axis=1), use_container_width=True)
+                    # Preparar el archivo para la descarga
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df_depurado.to_excel(writer, index=False, sheet_name='Sheet1')
+                    output.seek(0)
+                    
+                    st.download_button(
+                        label="Descargar Archivo Depurado",
+                        data=output,
+                        file_name="archivo_depurado.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+            
+            except Exception as e:
+                st.error(f"❌ Ocurrió un error al procesar el archivo: {e}")
 
 if __name__ == "__main__":
     main()
