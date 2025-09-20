@@ -90,26 +90,29 @@ def procesar_xml(carpeta):
 
 # --- Nueva función para depurar archivos Excel ---
 def depurar_excel(df_bruto):
-    # Eliminar las filas que contengan "Dollars For Week" o "Week Starting"
-    df_depurado = df_bruto[
-        ~df_bruto.iloc[:, 0].str.contains("Dollars For Week|Week Starting", na=False, case=False)
-    ].copy()
+    # Definir los encabezados correctos manualmente, basados en el archivo 'modificado.xls'
+    encabezados_correctos = [
+        "Vendor #", "Vendor", "Avg Days to Pay", "Invoice No.",
+        "Invoice Date", "Pay Date", "Amount To Pay"
+    ]
 
-    # Usar la primera fila limpia como nuevos encabezados
-    # `reset_index` para empezar de cero, `iloc[0]` para tomar la primera fila, `tolist()` para convertir a lista
-    nuevos_encabezados = df_depurado.iloc[0].tolist()
-    # Asignar los nuevos encabezados
-    df_depurado.columns = nuevos_encabezados
-
-    # Eliminar la fila de encabezados antigua, que ahora es la primera fila de datos
+    # Encontrar la fila que contiene los encabezados.
+    # Esta línea busca la fila donde el primer valor sea "Vendor #".
+    fila_encabezados_idx = df_bruto[df_bruto.iloc[:, 0] == "Vendor #"].index[0]
+    
+    # Eliminar todas las filas que estén antes de los encabezados
+    df_depurado = df_bruto.iloc[fila_encabezados_idx:].copy()
+    
+    # Asignar los encabezados correctos
+    df_depurado.columns = encabezados_correctos
+    
+    # Eliminar la fila que ahora contiene los encabezados (la fila con 'Vendor #')
     df_depurado = df_depurado.iloc[1:].reset_index(drop=True)
 
-    # Eliminar las columnas que no existen en el archivo modificado
-    columnas_a_eliminar = [
-        "Avg Days to Pay", "Pay Date", "Amount To Pay"
-    ]
-    # Eliminar columnas con errores de codificación
-    df_depurado = df_depurado.drop(columns=columnas_a_eliminar, errors='ignore')
+    # Eliminar filas que contengan "Dollars For Week"
+    df_depurado = df_depurado[
+        ~df_depurado["Vendor"].str.contains("Dollars For Week", na=False, case=False)
+    ].copy()
 
     return df_depurado
 
@@ -185,20 +188,20 @@ def main():
     with tab2:
         st.header("Depurar Archivo Excel")
         st.write("Sube el archivo Excel original para depurarlo.")
-        
+
         uploaded_file = st.file_uploader("Arrastra aquí el archivo 'NO modificado'", type=["xlsx", "xls", "csv"])
 
         if uploaded_file:
             try:
                 if uploaded_file.name.endswith('.csv'):
-                    df_bruto = pd.read_csv(uploaded_file)
+                    df_bruto = pd.read_csv(uploaded_file, header=None)
                 else:
-                    df_bruto = pd.read_excel(uploaded_file)
+                    df_bruto = pd.read_excel(uploaded_file, header=None)
 
                 st.success("✅ Archivo cargado correctamente.")
 
                 st.subheader("Vista previa del archivo sin depurar")
-                st.dataframe(df_bruto.head())
+                st.dataframe(df_bruto.head(10))  # Mostrar más filas para que el usuario vea los encabezados
                 
                 if st.button("Depurar y Descargar"):
                     df_depurado = depurar_excel(df_bruto)
@@ -208,7 +211,7 @@ def main():
 
                     # Preparar el archivo para la descarga
                     output = BytesIO()
-                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         df_depurado.to_excel(writer, index=False, sheet_name='Sheet1')
                     output.seek(0)
                     
@@ -221,7 +224,7 @@ def main():
             
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al procesar el archivo: {e}")
+                st.warning("Asegúrate de que el archivo tenga un formato y contenido similar al ejemplo original.")
 
 if __name__ == "__main__":
     main()
-
