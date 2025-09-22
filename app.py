@@ -18,7 +18,7 @@ def procesar_xml(carpeta):
         if archivo.endswith('.xml'):
             ruta = os.path.join(carpeta, archivo)
             try:
-                tree = ET.etree.parse(ruta)
+                tree = ET.parse(ruta)
                 root = tree.getroot()
 
                 emisor = root.find('cfdi:Emisor', ns)
@@ -73,26 +73,28 @@ def procesar_xml(carpeta):
 
     return tabla
 
+---
 
-# --- Función ajustada para depurar archivos Excel ---
 def depurar_excel(df_bruto):
-    # La lógica es ahora más simple: solo eliminamos las filas que contienen "Dollars For Week"
-    df_depurado = df_bruto[
-        ~df_bruto.iloc[:, 0].astype(str).str.contains("Dollars For Week", na=False, case=False)
-    ].copy()
+    # Encontrar la columna que contiene el texto de filtrado.
+    # Usaremos la primera columna para buscar los patrones a eliminar.
+    columna_filtro = df_bruto.columns[0]
     
-    # También eliminamos las filas que contienen "Week Starting"
-    df_depurado = df_depurado[
-        ~df_depurado.iloc[:, 0].astype(str).str.contains("Week Starting", na=False, case=False)
+    # Primero, eliminamos las filas que contengan los textos de resumen
+    # Aseguramos que los valores sean de tipo string para el método .str.contains()
+    df_depurado = df_bruto[
+        ~df_bruto[columna_filtro].astype(str).str.contains(
+            "Dollars For Week|Week Starting", na=False, case=False
+        )
     ].copy()
 
-    # Y las columnas adicionales
-    df_depurado = df_depurado.drop(columns=[df_depurado.columns[2], df_depurado.columns[5], df_depurado.columns[6]], errors='ignore')
-
+    # Eliminamos cualquier fila que esté completamente vacía
+    df_depurado.dropna(how='all', inplace=True)
+    
     return df_depurado.reset_index(drop=True)
 
+---
 
-# --- Lógica principal de la aplicación con pestañas ---
 def main():
     st.markdown(
         """
@@ -168,7 +170,7 @@ def main():
 
         if uploaded_file:
             try:
-                # Leemos el archivo. pd.read_excel usará la primera fila como encabezado por defecto
+                # pandas lee la primera fila como encabezado por defecto, lo cual es correcto para este archivo
                 if uploaded_file.name.endswith('.csv'):
                     df_bruto = pd.read_csv(uploaded_file)
                 else:
@@ -177,7 +179,7 @@ def main():
                 st.success("✅ Archivo cargado correctamente.")
 
                 st.subheader("Vista previa del archivo sin depurar")
-                st.dataframe(df_bruto.head(10))  
+                st.dataframe(df_bruto.head(10))
                 
                 if st.button("Depurar y Descargar"):
                     df_depurado = depurar_excel(df_bruto)
@@ -207,5 +209,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
