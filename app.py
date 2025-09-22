@@ -18,7 +18,6 @@ def procesar_xml(carpeta):
         if archivo.endswith('.xml'):
             ruta = os.path.join(carpeta, archivo)
             try:
-                # Línea corregida: Se eliminó el .etree extra
                 tree = ET.parse(ruta)
                 root = tree.getroot()
 
@@ -65,7 +64,7 @@ def procesar_xml(carpeta):
                     'Total': f"${total:,.2f}", 'Reviewed By': '', 'Approved By': '', 'Corp Approval': '',
                     'Description': ' | '.join(descripciones), 'P.O.': '', 'Payment Terms': '',
                     'Invoice date': fecha_formateada, 'Due date': '', 'PO Date': '',
-                    'Receip date': '', 'Delivery time': '', 'Currency': moneda.upper() if moneda else ''
+                    'Receip date': '', 'Delivery time': '', 'Currency': ''
                 }
                 tabla.append(fila)
 
@@ -74,15 +73,11 @@ def procesar_xml(carpeta):
 
     return tabla
 
----
-
 def depurar_excel(df_bruto):
     # Encontrar la columna que contiene el texto de filtrado.
-    # Usaremos la primera columna para buscar los patrones a eliminar.
     columna_filtro = df_bruto.columns[0]
     
     # Primero, eliminamos las filas que contengan los textos de resumen
-    # Aseguramos que los valores sean de tipo string para el método .str.contains()
     df_depurado = df_bruto[
         ~df_bruto[columna_filtro].astype(str).str.contains(
             "Dollars For Week|Week Starting", na=False, case=False
@@ -93,8 +88,6 @@ def depurar_excel(df_bruto):
     df_depurado.dropna(how='all', inplace=True)
     
     return df_depurado.reset_index(drop=True)
-
----
 
 def main():
     st.markdown(
@@ -171,7 +164,6 @@ def main():
 
         if uploaded_file:
             try:
-                # pandas lee la primera fila como encabezado por defecto, lo cual es correcto para este archivo
                 if uploaded_file.name.endswith('.csv'):
                     df_bruto = pd.read_csv(uploaded_file)
                 else:
@@ -189,7 +181,6 @@ def main():
                         st.subheader("Vista previa del archivo depurado")
                         st.dataframe(df_depurado.head())
 
-                        # Preparar el archivo para la descarga
                         output = BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
                             df_depurado.to_excel(writer, index=False, sheet_name='Sheet1')
@@ -210,4 +201,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
