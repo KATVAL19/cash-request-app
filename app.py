@@ -18,7 +18,7 @@ def procesar_xml(carpeta):
         if archivo.endswith('.xml'):
             ruta = os.path.join(carpeta, archivo)
             try:
-                tree = ET.parse(ruta)
+                tree = ET.etree.parse(ruta)
                 root = tree.getroot()
 
                 emisor = root.find('cfdi:Emisor', ns)
@@ -74,40 +74,22 @@ def procesar_xml(carpeta):
     return tabla
 
 
-# --- Función mejorada para depurar archivos Excel ---
+# --- Función ajustada para depurar archivos Excel ---
 def depurar_excel(df_bruto):
-    # Definir los encabezados correctos que esperamos
-    encabezados_correctos = [
-        "Vendor #", "Vendor", "Avg Days to Pay", "Invoice No.",
-        "Invoice Date", "Pay Date", "Amount To Pay"
-    ]
+    # La lógica es ahora más simple: solo eliminamos las filas que contienen "Dollars For Week"
+    df_depurado = df_bruto[
+        ~df_bruto.iloc[:, 0].astype(str).str.contains("Dollars For Week", na=False, case=False)
+    ].copy()
     
-    # Encontrar el índice de la fila que contiene los encabezados.
-    # Buscamos la fila donde el primer valor sea "Vendor #"
-    try:
-        fila_encabezados_idx = df_bruto[df_bruto.iloc[:, 0].astype(str).str.strip() == "Vendor #"].index[0]
-    except IndexError:
-        st.error("❌ No se pudo encontrar el encabezado 'Vendor #' en el archivo.")
-        return pd.DataFrame() # Devuelve un DataFrame vacío para evitar errores
-
-    # Eliminar todas las filas que estén antes de los encabezados
-    df_depurado = df_bruto.iloc[fila_encabezados_idx:].copy()
-    
-    # Asignar los encabezados correctos
-    df_depurado.columns = df_depurado.iloc[0]
-    
-    # Eliminar la fila que ahora contiene los encabezados (la primera fila del nuevo DataFrame)
-    df_depurado = df_depurado.iloc[1:].reset_index(drop=True)
-
-    # Eliminar las filas de resumen ("Dollars For Week")
+    # También eliminamos las filas que contienen "Week Starting"
     df_depurado = df_depurado[
-        ~df_depurado.iloc[:, 0].astype(str).str.contains("Dollars For Week", na=False, case=False)
+        ~df_depurado.iloc[:, 0].astype(str).str.contains("Week Starting", na=False, case=False)
     ].copy()
 
-    # Renombrar las columnas para que coincidan con el formato final
-    df_depurado.columns = encabezados_correctos
-    
-    return df_depurado
+    # Y las columnas adicionales
+    df_depurado = df_depurado.drop(columns=[df_depurado.columns[2], df_depurado.columns[5], df_depurado.columns[6]], errors='ignore')
+
+    return df_depurado.reset_index(drop=True)
 
 
 # --- Lógica principal de la aplicación con pestañas ---
@@ -186,15 +168,14 @@ def main():
 
         if uploaded_file:
             try:
-                # Se lee sin encabezados para poder limpiarlo
+                # Leemos el archivo. pd.read_excel usará la primera fila como encabezado por defecto
                 if uploaded_file.name.endswith('.csv'):
-                    df_bruto = pd.read_csv(uploaded_file, header=None)
+                    df_bruto = pd.read_csv(uploaded_file)
                 else:
-                    df_bruto = pd.read_excel(uploaded_file, header=None)
+                    df_bruto = pd.read_excel(uploaded_file)
 
                 st.success("✅ Archivo cargado correctamente.")
 
-                # Se muestra una vista previa para que el usuario pueda verificar los datos
                 st.subheader("Vista previa del archivo sin depurar")
                 st.dataframe(df_bruto.head(10))  
                 
@@ -226,4 +207,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
