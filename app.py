@@ -18,6 +18,7 @@ def procesar_xml(carpeta):
         if archivo.endswith('.xml'):
             ruta = os.path.join(carpeta, archivo)
             try:
+                # Línea corregida: Se eliminó el .etree extra
                 tree = ET.parse(ruta)
                 root = tree.getroot()
 
@@ -209,3 +210,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
