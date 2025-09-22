@@ -36,7 +36,7 @@ def procesar_xml(carpeta):
                 conceptos = root.find('cfdi:Conceptos', ns)
                 iva = 0.0
                 isr = 0.0
-                descripciones = []  # Nueva lista para guardar las descripciones
+                descripciones = []
 
                 if conceptos is not None:
                     for concepto in conceptos.findall('cfdi:Concepto', ns):
@@ -59,27 +59,13 @@ def procesar_xml(carpeta):
                                         isr += float(retencion.attrib.get('Importe'))
 
                 fila = {
-                    'Item No.': '',
-                    'Vendor Name': nombre_emisor,
-                    'Invoice No.': folio,
-                    'Subtotal': f"${subtotal:,.2f}",
-                    'IVA': f"${iva:,.2f}",
-                    'ISR/IVA RETENIDO': f"${isr:,.2f}",
-                    'Total': f"${total:,.2f}",
-                    'Reviewed By': '',
-                    'Approved By': '',
-                    'Corp Approval': '',
-                    'Description': ' | '.join(descripciones),
-                    'P.O.': '',
-                    'Payment Terms': '',
-                    'Invoice date': fecha_formateada,
-                    'Due date': '',
-                    'PO Date': '',
-                    'Receip date': '',
-                    'Delivery time': '',
-                    'Currency': moneda.upper() if moneda else ''
+                    'Item No.': '', 'Vendor Name': nombre_emisor, 'Invoice No.': folio,
+                    'Subtotal': f"${subtotal:,.2f}", 'IVA': f"${iva:,.2f}", 'ISR/IVA RETENIDO': f"${isr:,.2f}",
+                    'Total': f"${total:,.2f}", 'Reviewed By': '', 'Approved By': '', 'Corp Approval': '',
+                    'Description': ' | '.join(descripciones), 'P.O.': '', 'Payment Terms': '',
+                    'Invoice date': fecha_formateada, 'Due date': '', 'PO Date': '',
+                    'Receip date': '', 'Delivery time': '', 'Currency': moneda.upper() if moneda else ''
                 }
-
                 tabla.append(fila)
 
             except Exception as e:
@@ -88,32 +74,39 @@ def procesar_xml(carpeta):
     return tabla
 
 
-# --- Nueva función para depurar archivos Excel ---
+# --- Función mejorada para depurar archivos Excel ---
 def depurar_excel(df_bruto):
-    # Definir los encabezados correctos manualmente, basados en el archivo 'modificado.xls'
+    # Definir los encabezados correctos que esperamos
     encabezados_correctos = [
         "Vendor #", "Vendor", "Avg Days to Pay", "Invoice No.",
         "Invoice Date", "Pay Date", "Amount To Pay"
     ]
-
-    # Encontrar la fila que contiene los encabezados.
-    # Esta línea busca la fila donde el primer valor sea "Vendor #".
-    fila_encabezados_idx = df_bruto[df_bruto.iloc[:, 0] == "Vendor #"].index[0]
     
+    # Encontrar el índice de la fila que contiene los encabezados.
+    # Buscamos la fila donde el primer valor sea "Vendor #"
+    try:
+        fila_encabezados_idx = df_bruto[df_bruto.iloc[:, 0].astype(str).str.strip() == "Vendor #"].index[0]
+    except IndexError:
+        st.error("❌ No se pudo encontrar el encabezado 'Vendor #' en el archivo.")
+        return pd.DataFrame() # Devuelve un DataFrame vacío para evitar errores
+
     # Eliminar todas las filas que estén antes de los encabezados
     df_depurado = df_bruto.iloc[fila_encabezados_idx:].copy()
     
     # Asignar los encabezados correctos
-    df_depurado.columns = encabezados_correctos
+    df_depurado.columns = df_depurado.iloc[0]
     
-    # Eliminar la fila que ahora contiene los encabezados (la fila con 'Vendor #')
+    # Eliminar la fila que ahora contiene los encabezados (la primera fila del nuevo DataFrame)
     df_depurado = df_depurado.iloc[1:].reset_index(drop=True)
 
-    # Eliminar filas que contengan "Dollars For Week"
+    # Eliminar las filas de resumen ("Dollars For Week")
     df_depurado = df_depurado[
-        ~df_depurado["Vendor"].str.contains("Dollars For Week", na=False, case=False)
+        ~df_depurado.iloc[:, 0].astype(str).str.contains("Dollars For Week", na=False, case=False)
     ].copy()
 
+    # Renombrar las columnas para que coincidan con el formato final
+    df_depurado.columns = encabezados_correctos
+    
     return df_depurado
 
 
@@ -193,6 +186,7 @@ def main():
 
         if uploaded_file:
             try:
+                # Se lee sin encabezados para poder limpiarlo
                 if uploaded_file.name.endswith('.csv'):
                     df_bruto = pd.read_csv(uploaded_file, header=None)
                 else:
@@ -200,27 +194,31 @@ def main():
 
                 st.success("✅ Archivo cargado correctamente.")
 
+                # Se muestra una vista previa para que el usuario pueda verificar los datos
                 st.subheader("Vista previa del archivo sin depurar")
-                st.dataframe(df_bruto.head(10))  # Mostrar más filas para que el usuario vea los encabezados
+                st.dataframe(df_bruto.head(10))  
                 
                 if st.button("Depurar y Descargar"):
                     df_depurado = depurar_excel(df_bruto)
                     
-                    st.subheader("Vista previa del archivo depurado")
-                    st.dataframe(df_depurado.head())
+                    if not df_depurado.empty:
+                        st.subheader("Vista previa del archivo depurado")
+                        st.dataframe(df_depurado.head())
 
-                    # Preparar el archivo para la descarga
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_depurado.to_excel(writer, index=False, sheet_name='Sheet1')
-                    output.seek(0)
-                    
-                    st.download_button(
-                        label="Descargar Archivo Depurado",
-                        data=output,
-                        file_name="archivo_depurado.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                        # Preparar el archivo para la descarga
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df_depurado.to_excel(writer, index=False, sheet_name='Sheet1')
+                        output.seek(0)
+                        
+                        st.download_button(
+                            label="Descargar Archivo Depurado",
+                            data=output,
+                            file_name="archivo_depurado.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    else:
+                        st.warning("El proceso de depuración no produjo resultados. Por favor, revisa el archivo subido.")
             
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al procesar el archivo: {e}")
@@ -228,3 +226,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
