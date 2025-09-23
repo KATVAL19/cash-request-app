@@ -74,17 +74,12 @@ def procesar_xml(carpeta):
     return tabla
 
 def depurar_excel(df_bruto):
-    # Encontrar la columna que contiene el texto de filtrado.
-    columna_filtro = df_bruto.columns[0]
-    
-    # Primero, eliminamos las filas que contengan los textos de resumen
     df_depurado = df_bruto[
-        ~df_bruto[columna_filtro].astype(str).str.contains(
+        ~df_bruto.iloc[:, 0].astype(str).str.contains(
             "Dollars For Week|Week Starting", na=False, case=False
         )
     ].copy()
 
-    # Eliminamos cualquier fila que esté completamente vacía
     df_depurado.dropna(how='all', inplace=True)
     
     return df_depurado.reset_index(drop=True)
@@ -96,6 +91,10 @@ def main():
         """,
         unsafe_allow_html=True
     )
+
+    # Inicializar el estado de sesión si no existe
+    if 'master_df' not in st.session_state:
+        st.session_state.master_df = pd.DataFrame()
 
     tab1, tab2 = st.tabs(["Cash Request", "Depurar Archivo Excel"])
 
@@ -178,22 +177,44 @@ def main():
                     df_depurado = depurar_excel(df_bruto)
                     
                     if not df_depurado.empty:
-                        st.subheader("Vista previa del archivo depurado")
-                        st.dataframe(df_depurado.head())
+                        # 1. Comparar con el DataFrame maestro para encontrar duplicados
+                        if not st.session_state.master_df.empty:
+                            merged_df = pd.merge(df_depurado, st.session_state.master_df, how='left', indicator=True)
+                            duplicates = merged_df[merged_df['_merge'] == 'both'].iloc[:, :-1]
+                            new_data_only = merged_df[merged_df['_merge'] == 'left_only'].iloc[:, :-1]
+                        else:
+                            # Si el maestro está vacío, todos los datos son nuevos
+                            duplicates = pd.DataFrame()
+                            new_data_only = df_depurado.copy()
 
-                        output = BytesIO()
-                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            df_depurado.to_excel(writer, index=False, sheet_name='Sheet1')
-                        output.seek(0)
+                        # 2. Mostrar los duplicados encontrados
+                        if not duplicates.empty:
+                            st.warning(f"⚠️ ¡Se encontraron {len(duplicates)} filas duplicadas!")
+                            st.subheader("Duplicados Encontrados")
+                            st.dataframe(duplicates)
                         
-                        st.download_button(
-                            label="Descargar Archivo Depurado",
-                            data=output,
-                            file_name="archivo_depurado.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                    else:
-                        st.warning("El proceso de depuración no produjo resultados. Por favor, revisa el archivo subido.")
+                        # 3. Actualizar la base de datos con los datos nuevos
+                        if not new_data_only.empty:
+                            st.session_state.master_df = pd.concat([st.session_state.master_df, new_data_only], ignore_index=True)
+                            
+                            st.success("✅ Nuevos datos agregados a la base de datos.")
+                            st.subheader("Nuevos Datos Únicos")
+                            st.dataframe(new_data_only)
+
+                            # 4. Preparar el archivo para la descarga
+                            output = BytesIO()
+                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                                new_data_only.to_excel(writer, index=False, sheet_name='Sheet1')
+                            output.seek(0)
+                            
+                            st.download_button(
+                                label="Descargar Nuevos Datos",
+                                data=output,
+                                file_name="nuevos_datos_depurados.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                        else:
+                            st.info("ℹ️ El archivo subido no contiene nuevos datos.")
             
             except Exception as e:
                 st.error(f"❌ Ocurrió un error al procesar el archivo: {e}")
