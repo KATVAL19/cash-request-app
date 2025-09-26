@@ -64,7 +64,7 @@ def procesar_xml(carpeta):
                     'Total': f"${total:,.2f}", 'Reviewed By': '', 'Approved By': '', 'Corp Approval': '',
                     'Description': ' | '.join(descripciones), 'P.O.': '', 'Payment Terms': '',
                     'Invoice date': fecha_formateada, 'Due date': '', 'PO Date': '',
-                    'Receip date': '', 'Delivery time': '', 'Currency': ''
+                    'Receip date': '', 'Delivery time': '', 'Currency': moneda.upper() if moneda else ''
                 }
                 tabla.append(fila)
 
@@ -92,7 +92,6 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Inicializar el estado de sesión si no existe
     if 'master_df' not in st.session_state:
         st.session_state.master_df = pd.DataFrame()
 
@@ -183,7 +182,6 @@ def main():
                             duplicates = merged_df[merged_df['_merge'] == 'both'].iloc[:, :-1]
                             new_data_only = merged_df[merged_df['_merge'] == 'left_only'].iloc[:, :-1]
                         else:
-                            # Si el maestro está vacío, todos los datos son nuevos
                             duplicates = pd.DataFrame()
                             new_data_only = df_depurado.copy()
 
@@ -198,6 +196,8 @@ def main():
                             st.session_state.master_df = pd.concat([st.session_state.master_df, new_data_only], ignore_index=True)
                             
                             st.success("✅ Nuevos datos agregados a la base de datos.")
+                            
+                            # 👇 Esta es la sección que muestra los nuevos datos
                             st.subheader("Nuevos Datos Únicos")
                             st.dataframe(new_data_only)
 
